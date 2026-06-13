@@ -133,6 +133,9 @@ def run_bot():
     if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN.startswith("YOUR_"):
         raise ValueError("TELEGRAM_BOT_TOKEN not configured")
 
+    # Diagnostic: test if we can reach Telegram at all
+    _test_telegram_connectivity()
+
     railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
 
     if railway_domain:
@@ -142,7 +145,16 @@ def run_bot():
     logger.info("Building Telegram app...")
 
     try:
-        app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        # Use longer timeouts for Railway's network
+        app = (
+            Application.builder()
+            .token(TELEGRAM_BOT_TOKEN)
+            .connect_timeout(30.0)
+            .read_timeout(60.0)
+            .write_timeout(30.0)
+            .pool_timeout(10.0)
+            .build()
+        )
     except Exception as e:
         logger.error(f"Failed to build app: {e}", exc_info=True)
         raise
@@ -152,3 +164,21 @@ def run_bot():
 
     logger.info("Starting polling...")
     app.run_polling(drop_pending_updates=True)
+
+
+def _test_telegram_connectivity():
+    """Quick diagnostic: can we reach api.telegram.org?"""
+    import urllib.request
+    import json as _json
+    try:
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN[:12]}.../getMe",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read())
+            if data.get("ok"):
+                logger.info(f"Telegram reachable. Bot: {data['result']['username']}")
+            else:
+                logger.error(f"Telegram API error: {data}")
+    except Exception as e:
+        logger.error(f"Cannot reach Telegram API: {e}")
