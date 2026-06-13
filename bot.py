@@ -1,5 +1,8 @@
+import os
 import re
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -115,12 +118,34 @@ def _split_long_message(text: str, limit: int = 4000) -> list[str]:
     return parts
 
 
+class HealthHandler(BaseHTTPRequestHandler):
+    """Minimal HTTP handler for Railway health checks."""
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        pass  # Suppress HTTP logs
+
+
+def _start_health_server():
+    """Start a tiny HTTP server so Railway sees the service as healthy."""
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    logger.info(f"Health server listening on port {port}")
+    server.serve_forever()
+
+
 def run_bot():
     """Start the Telegram bot."""
     if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN.startswith("YOUR_"):
         raise ValueError(
             "Telegram bot token not configured. Set TELEGRAM_BOT_TOKEN in .env"
         )
+
+    # Start health check server for Railway in a background thread
+    threading.Thread(target=_start_health_server, daemon=True).start()
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
