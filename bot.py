@@ -25,7 +25,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Bonjour ! Send me any link (article, Substack, X/Twitter, Threads...) "
         "and I'll translate it into standard French with B2-C1 vocabulary notes.\n\n"
-        "Chaque paragraphe traduit suivra l'original. Le résultat sera aussi sauvegardé dans Notion."
+        "Chaque paragraphe traduit suivra l'original. Le resultat sera aussi sauvegarde dans Notion."
     )
 
 
@@ -38,47 +38,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     urls = URL_PATTERN.findall(text)
     if not urls:
-        return  # No URL, ignore
+        return
 
-    url = urls[0]  # Process the first URL found
+    url = urls[0]
 
     try:
-        # Step 1: Extract content
-        status_msg = await update.message.reply_text("🔍 Extraction du contenu...")
+        status_msg = await update.message.reply_text("Extraction du contenu...")
         content = extract_content(url)
         title = content["title"]
         full_text = content["text"]
         para_count = len(content["paragraphs"])
 
         await status_msg.edit_text(
-            f"✅ Contenu extrait : *{title}*\n"
-            f"📊 {para_count} paragraphes\n"
-            f"🌐 Traduction en cours avec DeepSeek..."
+            f"Contenu extrait : *{title}*\n"
+            f"{para_count} paragraphes\n"
+            "Traduction en cours avec DeepSeek..."
         )
 
-        # Step 2: Translate & extract vocabulary
         result = translate_and_extract_vocab(full_text)
 
         await status_msg.edit_text(
-            f"✅ Traduction terminée\n"
-            f"📚 {len(result.get('vocabulary', []))} mots de vocabulaire extraits\n"
-            f"📝 Création de la page Notion..."
+            f"Traduction terminee\n"
+            f"{len(result.get('vocabulary', []))} mots de vocabulaire extraits\n"
+            "Creation de la page Notion..."
         )
 
-        # Step 3: Create Notion page
         notion_url = None
         try:
             notion_url = create_notion_page(title, result)
         except Exception as e:
             logger.error(f"Notion error: {e}")
-            # Continue without Notion
 
-        # Step 4: Send result to user
         await status_msg.delete()
 
         telegram_output = format_telegram_output(result, title, notion_url)
 
-        # Split if too long for Telegram (4096 char limit)
         if len(telegram_output) > 4000:
             parts = _split_long_message(telegram_output)
             for part in parts:
@@ -88,23 +82,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not notion_url:
             await update.message.reply_text(
-                "⚠️ La sauvegarde Notion a échoué. Vérifiez votre configuration Notion."
+                "La sauvegarde Notion a echoue. Verifiez votre configuration Notion."
             )
 
     except ValueError as e:
         await update.message.reply_text(
-            f"❌ Erreur d'extraction : {e}\n\n"
+            f"Erreur d'extraction : {e}\n\n"
             "Assurez-vous que le lien pointe vers un article accessible."
         )
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error: {e}", exc_info=True)
         await update.message.reply_text(
-            f"❌ Une erreur est survenue : {e}\n\nMerci de réessayer."
+            f"Une erreur est survenue : {e}\n\nMerci de reessayer."
         )
 
 
 def _split_long_message(text: str, limit: int = 4000) -> list[str]:
-    """Split a long message at paragraph boundaries."""
     parts = []
     current = ""
     for line in text.split("\n"):
@@ -119,38 +112,43 @@ def _split_long_message(text: str, limit: int = 4000) -> list[str]:
 
 
 class HealthHandler(BaseHTTPRequestHandler):
-    """Minimal HTTP handler for Railway health checks."""
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
 
     def log_message(self, format, *args):
-        pass  # Suppress HTTP logs
+        pass
 
 
 def _start_health_server():
-    """Start a tiny HTTP server so Railway sees the service as healthy."""
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", "8080"))
     server = HTTPServer(("0.0.0.0", port), HealthHandler)
-    logger.info(f"Health server listening on port {port}")
+    logger.info(f"Health server on port {port}")
     server.serve_forever()
 
 
 def run_bot():
     """Start the Telegram bot."""
     if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN.startswith("YOUR_"):
-        raise ValueError(
-            "Telegram bot token not configured. Set TELEGRAM_BOT_TOKEN in .env"
-        )
+        raise ValueError("TELEGRAM_BOT_TOKEN not configured")
 
-    # Start health check server for Railway in a background thread
-    threading.Thread(target=_start_health_server, daemon=True).start()
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    if railway_domain:
+        threading.Thread(target=_start_health_server, daemon=True).start()
+        logger.info(f"Railway domain: {railway_domain}")
+
+    logger.info("Building Telegram app...")
+
+    try:
+        app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    except Exception as e:
+        logger.error(f"Failed to build app: {e}", exc_info=True)
+        raise
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Bot is polling...")
-    app.run_polling()
+    logger.info("Starting polling...")
+    app.run_polling(drop_pending_updates=True)
