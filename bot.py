@@ -9,7 +9,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from config import TELEGRAM_BOT_TOKEN
 from extractor import extract_content
 from translator import translate_and_extract_vocab, format_telegram_output
-from notion_writer import create_notion_page
+from notion_writer import create_notion_page, validate_config
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -64,10 +64,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         notion_url = None
+        notion_error = None
         try:
             notion_url = create_notion_page(title, result)
         except Exception as e:
-            logger.error(f"Notion error: {e}")
+            notion_error = str(e)
+            logger.error(f"Notion error: {notion_error}")
 
         await status_msg.delete()
 
@@ -82,7 +84,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not notion_url:
             await update.message.reply_text(
-                "La sauvegarde Notion a echoue. Verifiez votre configuration Notion."
+                f"La sauvegarde Notion a echoue : {notion_error}"
             )
 
     except ValueError as e:
@@ -135,6 +137,14 @@ def run_bot():
 
     # Diagnostic: test if we can reach Telegram at all
     _test_telegram_connectivity()
+
+    # Validate Notion configuration
+    try:
+        info = validate_config()
+        logger.info(f"Notion OK — parent page: {info['title']} ({info['url']})")
+    except Exception as e:
+        logger.error(f"Notion config validation failed: {e}")
+        # Don't crash — the bot still works without Notion
 
     railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
 
