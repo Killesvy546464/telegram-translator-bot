@@ -56,6 +56,18 @@ def create_notion_page(title: str, result: dict, parent_page_id: str = None) -> 
 
     all_blocks = _build_blocks(result)
 
+    logger.info(
+        f"create_notion_page: {len(all_blocks)} blocks to send to Notion"
+    )
+    if all_blocks:
+        for bi, blk in enumerate(all_blocks[:5]):
+            bt = blk.get("type", "unknown")
+            rt = blk.get(bt, {}).get("rich_text", [])
+            txt = "".join(t.get("text", {}).get("content", "") for t in rt)
+            logger.info(f"  block[{bi}] {bt}: '{txt[:80]}...'" if len(txt) > 80 else f"  block[{bi}] {bt}: '{txt}'")
+        if len(all_blocks) > 5:
+            logger.info(f"  ... and {len(all_blocks) - 5} more blocks")
+
     # Notion API allows max 100 children per page create / append call
     MAX_BLOCKS_PER_CALL = 100
     first_chunk = all_blocks[:MAX_BLOCKS_PER_CALL]
@@ -101,6 +113,12 @@ def create_notion_page(title: str, result: dict, parent_page_id: str = None) -> 
 
 def _build_blocks(result: dict) -> list:
     """Build Notion blocks from the translation result."""
+    para_count = len(result.get("paragraphs", []))
+    vocab_count = len(result.get("vocabulary", []))
+    logger.info(
+        f"_build_blocks input: {para_count} paragraphs, {vocab_count} vocab items"
+    )
+
     blocks = []
 
     # Header

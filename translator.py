@@ -1,9 +1,12 @@
 import json
 import re
+import logging
 from openai import OpenAI
 from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, MAX_CHUNK_CHARS
 
 client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are a professional literary translator translating English texts into standard, decent French (niveau soutenu). You also identify useful B2-C1 level French vocabulary for language learners.
 
@@ -103,9 +106,20 @@ def _parse_response(content: str) -> dict:
     paragraphs = []
     vocabulary = []
 
+    # Log raw response summary for debugging parse failures
+    logger.info(f"Parsing DeepSeek response: {len(content)} chars")
+    logger.info(f"Response preview: {content[:300]}...")
+
     # Extract paragraph pairs
     orig_matches = re.findall(r"<original>(.*?)</original>", content, re.DOTALL)
     trad_matches = re.findall(r"<traduction>(.*?)</traduction>", content, re.DOTALL)
+
+    logger.info(
+        f"Tag matches: {len(orig_matches)} <original>, "
+        f"{len(trad_matches)} <traduction>"
+    )
+    if not orig_matches:
+        logger.warning("No <original> tags found in DeepSeek response!")
 
     for orig, trad in zip(orig_matches, trad_matches):
         paragraphs.append({

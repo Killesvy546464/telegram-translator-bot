@@ -57,6 +57,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         result = translate_and_extract_vocab(full_text)
 
+        para_in = len(result.get("paragraphs", []))
+        vocab_in = len(result.get("vocabulary", []))
+        logger.info(
+            f"Translation result: {para_in} paragraphs, {vocab_in} vocab items"
+        )
+        if para_in > 0:
+            p0 = result["paragraphs"][0]
+            logger.info(
+                f"First para: orig={len(p0.get('original',''))} chars, "
+                f"trad={len(p0.get('translated',''))} chars"
+            )
+
         await status_msg.edit_text(
             f"Traduction terminee\n"
             f"{len(result.get('vocabulary', []))} mots de vocabulaire extraits\n"
